@@ -3,20 +3,22 @@ import os.path
 import gradio as gr
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from diffusers.utils import logging
 from scripts.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
 
 from modules import scripts
+from modules.scripts import PostprocessImageArgs
 
 logger = logging.get_logger(__name__)
 
-safety_model_id = "CompVis/stable-diffusion-safety-checker"
+safety_model_id = "/home/ucloud/stable-diffusion-webui/models/huggingface/nsfw_detector/"
 safety_feature_extractor = None
 safety_checker = None
 
 warning_image = os.path.join("extensions", "stable-diffusion-webui-nsfw-filter", "warning", "warning.png")
+currnt_path = os.path.dirname(os.path.abspath(__file__)) + "/"
 
 
 def numpy_to_pil(images):
@@ -29,6 +31,38 @@ def numpy_to_pil(images):
     pil_images = [Image.fromarray(image) for image in images]
 
     return pil_images
+
+
+def add_watermark(img, watermark_text):
+    width, height = img.size
+    print(f'image size: {width}x{height}')
+
+    def get_offset(text_fontsize):
+        return text_fontsize * 0.8
+
+    def get_fontsize(w, h):
+        min_len = min(w, h)
+        return ((min_len * 10) / 512) + 1
+
+    fontsize = get_fontsize(width, height)
+    font = ImageFont.truetype(currnt_path + 'SourceHanSansCN-Normal.otf', int(fontsize))
+    content_len = font.getlength(watermark_text)
+    bbox = font.getbbox(watermark_text)
+    txt_height = bbox[3] - bbox[1]
+
+    x = width - content_len - get_offset(fontsize)
+    y = height - txt_height - get_offset(fontsize)
+
+    blurred = Image.new("RGBA", (width, height))
+    draw = ImageDraw.Draw(blurred)
+    draw.text((x, y), watermark_text, font=font, fill=(0, 0, 0, 40))
+    blurred = blurred.filter(ImageFilter.BoxBlur(4))
+    img.paste(blurred, (0, 0), blurred)
+
+    draw = ImageDraw.Draw(img)
+    draw.text((x, y), watermark_text, font=font, fill=(245, 245, 245, 200))
+
+    return img
 
 
 # check and replace nsfw content
@@ -73,6 +107,7 @@ def censor_batch(x, safety_checker_adj: float):
 
 
 class NsfwCheckScript(scripts.Script):
+
     def title(self):
         return "NSFW check"
 
@@ -92,8 +127,13 @@ class NsfwCheckScript(scripts.Script):
         """
 
         images = kwargs['images']
+
         if args[0] is True:
             images[:] = censor_batch(images, args[1])[:]
+
+    def postprocess_image(self, p, pp: PostprocessImageArgs, *args):
+        if len(args) == 3 and args[2] is not None and args[2] != "":
+            pp.image = add_watermark(pp.image, args[2])
 
     def ui(self, is_img2img):
         enable_nsfw_filer = gr.Checkbox(label='Enable NSFW filter',
@@ -102,4 +142,6 @@ class NsfwCheckScript(scripts.Script):
         safety_checker_adj = gr.Slider(label="Safety checker adjustment",
                                        minimum=-0.5, maximum=0.5, value=0.0, step=0.001,
                                        elem_id=self.elem_id("safety_checker_adj"))
-        return [enable_nsfw_filer, safety_checker_adj]
+        watermark = gr.Textbox(label="Watermark text", default="",
+                               elem_id=self.elem_id("watermark"))
+        return [enable_nsfw_filer, safety_checker_adj, watermark]
