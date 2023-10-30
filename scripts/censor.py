@@ -17,8 +17,10 @@ safety_model_id = "/home/ucloud/stable-diffusion-webui/models/huggingface/nsfw_d
 safety_feature_extractor = None
 safety_checker = None
 
-warning_image = os.path.join("extensions", "stable-diffusion-webui-nsfw-filter", "warning", "warning.png")
-currnt_path = os.path.dirname(os.path.abspath(__file__)) + "/"
+current_path = os.path.dirname(os.path.abspath(__file__))
+parent_path = os.path.dirname(current_path)
+warning_image = os.path.join(parent_path, "warning", "warning.png")
+current_path = current_path + "/"
 
 
 def numpy_to_pil(images):
@@ -45,7 +47,8 @@ def add_watermark(img, watermark_text):
         return ((min_len * 10) / 512) + 1
 
     fontsize = get_fontsize(width, height)
-    font = ImageFont.truetype(currnt_path + 'SourceHanSansCN-Normal.otf', int(fontsize))
+    font = ImageFont.truetype(
+        current_path + 'SourceHanSansCN-Normal.otf', int(fontsize))
     content_len = font.getlength(watermark_text)
     bbox = font.getbbox(watermark_text)
     txt_height = bbox[3] - bbox[1]
